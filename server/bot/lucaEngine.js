@@ -1,38 +1,29 @@
 const intents = require("./intents.json");
 const { getSession, resetSession, pushHistory } = require("./sessionStore");
 
-const HARD_FAIL_LIMIT = 3;
+const HARD_FAIL_LIMIT = 4;
+const CHIPS = intents.chipPhrases;
 
 function normalize(text) {
-  return (text || "").toLowerCase().trim().replace(/\s+/g, " ");
+  return (text || "").toLowerCase().trim().replace(/[?!.]+$/g, "").replace(/\s+/g, " ");
 }
 
 function includesKeyword(text, list) {
   return list.some((kw) => text.includes(kw));
 }
 
+function isInquiry(text) {
+  return /(what|which|do you have|show|list|tell me|can i see|any|available)/.test(text);
+}
+
+function isGreeting(text) {
+  const t = text.replace(/[^a-z\s]/g, "");
+  return includesKeyword(t, intents.keywords.greeting) && t.length < 25;
+}
+
 function pickSoftFallback(session) {
   const options = intents.softFallbacks.filter((m) => m !== session.lastBot);
   return options[Math.floor(Math.random() * options.length)] || intents.softFallbacks[0];
-}
-
-function detectCategory(text) {
-  if (includesKeyword(text, intents.keywords.pizza)) return "pizza";
-  if (includesKeyword(text, intents.keywords.pasta)) return "pasta";
-  if (includesKeyword(text, intents.keywords.drinks)) return "drink";
-  if (includesKeyword(text, intents.keywords.dessert)) return "dessert";
-  if (includesKeyword(text, intents.keywords.menu)) return "menu";
-  return null;
-}
-
-function extractQuantity(text) {
-  const match = text.match(/\b(\d{1,2})\b/);
-  if (match) return parseInt(match[1], 10);
-  const words = { one: 1, two: 2, three: 3, four: 4, five: 5 };
-  for (const [w, n] of Object.entries(words)) {
-    if (text.includes(w)) return n;
-  }
-  return null;
 }
 
 function menuBlock() {
@@ -43,7 +34,35 @@ function menuBlock() {
     `🍝 **Pasta:** ${m.pastas.join(", ")}\n` +
     `🍷 **Drinks:** ${m.drinks.join(", ")}\n` +
     `🍮 **Desserts:** ${m.desserts.join(", ")}\n\n` +
-    "What would you like to start with?"
+    "Tell me what you would like — for example **Margherita** or **Spaghetti Carbonara**."
+  );
+}
+
+function listPizzas() {
+  return (
+    `Our pizzas tonight:\n${intents.menu.pizzas.map((p) => `• **${p}**`).join("\n")}\n\n` +
+    "Which pizza shall I add? You can type the name (e.g. **Margherita**)."
+  );
+}
+
+function listPastas() {
+  return (
+    `Our pasta dishes:\n${intents.menu.pastas.map((p) => `• **${p}**`).join("\n")}\n\n` +
+    "Which pasta would you like?"
+  );
+}
+
+function listDrinks() {
+  return (
+    `Our drinks:\n${intents.menu.drinks.map((d) => `• **${d}**`).join("\n")}\n\n` +
+    "Which drink would you like? (Or say **no** when we reach the drinks step.)"
+  );
+}
+
+function listDesserts() {
+  return (
+    `Our desserts:\n${intents.menu.desserts.map((d) => `• **${d}**`).join("\n")}\n\n` +
+    "Which dessert tempts you?"
   );
 }
 
@@ -51,7 +70,9 @@ function orderSummary(order) {
   const lines = [];
   if (order.items.length) {
     lines.push("**Main dishes:**");
-    order.items.forEach((i) => lines.push(`• ${i.qty}× ${i.name}${i.note ? ` (${i.note})` : ""}`));
+    order.items.forEach((i) =>
+      lines.push(`• ${i.qty}× ${i.name}${i.note ? ` (${i.note})` : ""}`)
+    );
   }
   if (order.drinks.length) lines.push(`**Drinks:** ${order.drinks.join(", ")}`);
   if (order.desserts.length) lines.push(`**Desserts:** ${order.desserts.join(", ")}`);
@@ -72,9 +93,150 @@ function failUnderstand(session) {
   session.softFails += 1;
   if (session.softFails >= HARD_FAIL_LIMIT) {
     resetSession(session._id);
+    const s = getSession(session._id);
+    s.stage = "pick_item";
     return intents.hardFallback;
   }
   return pickSoftFallback(session);
+}
+
+function capitalize(s) {
+  if (!s) return "";
+  return s.trim().charAt(0).toUpperCase() + s.trim().slice(1);
+}
+
+function findMenuItem(text) {
+  const t = normalize(text);
+  const all = [
+    ...intents.menu.pizzas.map((n) => ({ name: n, type: "pizza" })),
+    ...intents.menu.pastas.map((n) => ({ name: n, type: "pasta" })),
+    ...intents.menu.drinks.map((n) => ({ name: n, type: "drink" })),
+    ...intents.menu.desserts.map((n) => ({ name: n, type: "dessert" })),
+  ];
+  return all.find((item) => t.includes(item.name.toLowerCase()));
+}
+
+/** Match UI chips + natural questions (works in any stage). */
+function matchGlobalIntent(text) {
+  if (!text) return null;
+
+  if (
+    text === normalize(CHIPS.menu) ||
+    includesKeyword(text, intents.keywords.menu) ||
+    /show\s+(me\s+)?(the\s+)?menu/.test(text)
+  ) {
+    return "MENU";
+  }
+
+  if (
+    text === normalize(CHIPS.bill) ||
+    includesKeyword(text, intents.keywords.bill)
+  ) {
+    return "BILL";
+  }
+
+  if (
+    text === normalize(CHIPS.drinks) ||
+    (text.includes("drink") && isInquiry(text))
+  ) {
+    return "DRINKS_LIST";
+  }
+
+  if (
+    text === normalize(CHIPS.pasta) ||
+    (text.includes("pasta") && isInquiry(text))
+  ) {
+    return "PASTA_LIST";
+  }
+
+  if (
+    text === normalize(CHIPS.dessert) ||
+    (text.includes("dessert") && isInquiry(text))
+  ) {
+    return "DESSERT_LIST";
+  }
+
+  if (
+    text === normalize(CHIPS.pizza) ||
+    text.includes("order pizza") ||
+    text.includes("want pizza") ||
+    text.includes("like pizza") ||
+    (text.includes("pizza") && !isInquiry(text))
+  ) {
+    return "PIZZA_START";
+  }
+
+  const item = findMenuItem(text);
+  if (item) return { type: "ADD_ITEM", item };
+
+  return null;
+}
+
+function handleGlobalIntent(session, intent) {
+  if (typeof intent === "object" && intent.type === "ADD_ITEM") {
+    session.pending = { name: intent.item.name, category: intent.item.type };
+    session.stage = "item_qty";
+    return setReply(
+      session,
+      `**${intent.item.name}** — excellent choice! How many portions? (e.g. **1** or **2**)`
+    );
+  }
+
+  switch (intent) {
+    case "MENU":
+      session.stage = "pick_item";
+      session.pending = null;
+      return setReply(session, menuBlock());
+
+    case "BILL":
+      return setReply(
+        session,
+        "Your bill comes at the end — let me complete your order first. 💶\n\n" +
+          "Say **menu**, add a **pizza** or **pasta**, or tell me what you need next."
+      );
+
+    case "DRINKS_LIST":
+      session.stage = "pick_item";
+      session.pending = { category: "drink", mode: "browse" };
+      return setReply(session, listDrinks());
+
+    case "PASTA_LIST":
+      session.stage = "item_name";
+      session.pending = { category: "pasta" };
+      return setReply(session, listPastas());
+
+    case "PIZZA_START":
+    case "PIZZA_LIST":
+      session.stage = "item_name";
+      session.pending = { category: "pizza" };
+      return setReply(session, listPizzas());
+
+    case "DESSERT_LIST":
+      session.stage = "pick_item";
+      session.pending = { category: "dessert", mode: "browse" };
+      return setReply(session, listDesserts());
+
+    default:
+      return null;
+  }
+}
+
+function extractQuantity(text) {
+  const match = text.match(/\b(\d{1,2})\b/);
+  if (match) return parseInt(match[1], 10);
+  const words = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+  for (const [w, n] of Object.entries(words)) {
+    if (new RegExp(`\\b${w}\\b`).test(text)) return n;
+  }
+  return null;
+}
+
+function introMessage() {
+  return (
+    `Buonasera! I am **Luca**, your waiter at *${intents.restaurant}*. ✨\n\n` +
+    `I will guide you through your order **one step at a time**.\n\n` +
+    `Tap a button below or say: **menu**, **pizza**, **pasta**, **drinks**, or **dessert**.`
+  );
 }
 
 function processMessage(sessionId, userText) {
@@ -83,16 +245,23 @@ function processMessage(sessionId, userText) {
   const text = normalize(userText);
 
   if (!text) {
-    return setReply(session, "I'm listening — what would you like tonight? 🍷");
+    return setReply(session, "I'm here — what would you like tonight? 🍷");
   }
 
   pushHistory(session, "user", userText);
 
-  if (includesKeyword(text, intents.keywords.bill) && session.stage !== "confirm") {
-    const reply = setReply(
-      session,
-      "Your bill will be ready at the end — let me finish your order first, then I'll get the total for you. 💶\n\nShall we continue?"
-    );
+  const globalIntent = matchGlobalIntent(text);
+  if (globalIntent) {
+    const globalReply = handleGlobalIntent(session, globalIntent);
+    if (globalReply) {
+      pushHistory(session, "bot", globalReply);
+      return globalReply;
+    }
+  }
+
+  if (isGreeting(text) && session.stage !== "confirm") {
+    session.stage = "pick_item";
+    const reply = setReply(session, introMessage());
     pushHistory(session, "bot", reply);
     return reply;
   }
@@ -100,105 +269,75 @@ function processMessage(sessionId, userText) {
   let reply = "";
 
   switch (session.stage) {
-    case "welcome": {
-      if (includesKeyword(text, intents.keywords.menu) || detectCategory(text)) {
-        if (detectCategory(text) === "menu" || includesKeyword(text, intents.keywords.menu)) {
-          session.stage = "pick_item";
-          reply = setReply(session, menuBlock());
-        } else {
-          session.pending = { category: detectCategory(text) };
-          session.stage = "item_name";
-          reply = setReply(
-            session,
-            `Perfetto! A fine choice. 🍝\n\nWhich **${session.pending.category}** would you like? You can pick from our menu or tell me the name.`
-          );
-        }
-      } else if (includesKeyword(text, intents.keywords.greeting) || text.length < 20) {
-        session.stage = "pick_item";
-        reply = setReply(
-          session,
-          `Buonasera! I am **Luca**, your waiter at *${intents.restaurant}*. ✨\n\n` +
-            `Tonight I will guide you through your order, step by step.\n\n` +
-            `Would you like to see the **menu**, or tell me what you are craving — pizza, pasta, drinks, or dessert?`
-        );
-      } else {
-        session.pending = { category: detectCategory(text) || "dish" };
-        session.stage = "item_name";
-        reply = setReply(session, `Wonderful! Tell me which dish you had in mind, and how many portions. 🍕`);
-      }
-      break;
-    }
-
+    case "welcome":
     case "pick_item": {
-      if (
-        includesKeyword(text, intents.keywords.greeting) &&
-        !detectCategory(text)
-      ) {
+      if (session.pending?.mode === "browse" && session.pending.category === "drink") {
+        const drink = findMenuItem(text);
+        if (drink) {
+          session.order.drinks.push(drink.name);
+          session.pending = null;
+          session.stage = "pick_item";
+          reply = setReply(
+            session,
+            `**${drink.name}** noted for later. 🍷\n\nWould you like **pizza** or **pasta** to start? Or say **menu**.`
+          );
+          break;
+        }
+      }
+
+      const item = findMenuItem(text);
+      if (item && (item.type === "pizza" || item.type === "pasta")) {
+        session.pending = { name: item.name, category: item.type };
+        session.stage = "item_qty";
         reply = setReply(
           session,
-          `Buonasera! Tell me what you would like — **menu**, **pizza**, **pasta**, **drinks**, or **dessert**? 🍷`
+          `**${item.name}** — perfetto! How many portions? (e.g. **2**)`
         );
-      } else if (includesKeyword(text, intents.keywords.menu)) {
-        reply = setReply(session, menuBlock());
       } else {
-        const cat = detectCategory(text);
-        if (cat === "drink") {
-          session.stage = "drinks";
-          reply = setReply(
-            session,
-            `Our drinks: **${intents.menu.drinks.join(", ")}**.\n\nWhich would you like?`
-          );
-        } else if (cat === "dessert") {
-          session.stage = "desserts";
-          reply = setReply(
-            session,
-            `Our desserts: **${intents.menu.desserts.join(", ")}**.\n\nWhich sweet treat shall I add?`
-          );
-        } else if (cat) {
-          session.pending = { category: cat };
-          session.stage = "item_name";
-          const list =
-            cat === "pizza" ? intents.menu.pizzas : cat === "pasta" ? intents.menu.pastas : [];
-          reply = setReply(
-            session,
-            `Excellent! Choose your **${cat}**:\n${list.map((x) => `• ${x}`).join("\n")}\n\nOr type the name you prefer.`
-          );
-        } else {
-          session.pending = { name: capitalize(userText) };
-          session.stage = "item_qty";
-          reply = setReply(
-            session,
-            `**${capitalize(userText)}** — excellent! How many portions would you like? (e.g. 2)`
-          );
-        }
+        reply = setReply(session, failUnderstand(session));
       }
       break;
     }
 
     case "item_name": {
-      session.pending = session.pending || {};
-      session.pending.name = capitalize(userText);
-      session.stage = "item_qty";
-      reply = setReply(
-        session,
-        `**${session.pending.name}** — bellissimo! How many would you like? 🔢`
-      );
+      const item = findMenuItem(text);
+      if (item) {
+        session.pending = { name: item.name, category: item.type };
+        session.stage = "item_qty";
+        reply = setReply(
+          session,
+          `**${item.name}** — bellissimo! How many would you like? 🔢`
+        );
+      } else if (text.length >= 2 && !isInquiry(text)) {
+        session.pending = { name: capitalize(userText), category: session.pending?.category || "dish" };
+        session.stage = "item_qty";
+        reply = setReply(
+          session,
+          `**${session.pending.name}** — noted! How many portions?`
+        );
+      } else {
+        reply = setReply(session, failUnderstand(session));
+      }
       break;
     }
 
     case "item_qty": {
-      const qty = extractQuantity(text) || (includesKeyword(text, intents.keywords.yes) ? 1 : null);
+      const qty = extractQuantity(text);
       if (!qty) {
         reply = setReply(session, failUnderstand(session));
         break;
       }
-      const name = session.pending?.name || session.pending?.raw || "Chef's special";
-      session.order.items.push({ name, qty, note: session.pending?.category || "" });
+      const name = session.pending?.name || "Special";
+      session.order.items.push({
+        name,
+        qty,
+        note: session.pending?.category || "",
+      });
       session.pending = null;
       session.stage = "more_items";
       reply = setReply(
         session,
-        `Added **${qty}× ${name}** to your order. ✅\n\nWould you like anything else — pizza, pasta, drinks, or dessert? (**yes** / **no**)`
+        `Added **${qty}× ${name}** to your order. ✅\n\nAnything else? (**yes** / **no**)\n\nOr ask for **menu**, **drinks**, **dessert**.`
       );
       break;
     }
@@ -206,27 +345,18 @@ function processMessage(sessionId, userText) {
     case "more_items": {
       if (includesKeyword(text, intents.keywords.yes)) {
         session.stage = "pick_item";
-        reply = setReply(session, `What else can I bring you? 🍝\n\n${menuBlock().split("\n\n")[1]}`);
+        reply = setReply(
+          session,
+          `What else would you like? 🍝\n\nSay **pizza**, **pasta**, **drinks**, **dessert**, or **menu**.`
+        );
       } else if (includesKeyword(text, intents.keywords.no)) {
         session.stage = "drinks";
         reply = setReply(
           session,
-          `Perfetto! Now for drinks — we have **${intents.menu.drinks.join(", ")}**.\n\nWhat would you like? (or say **no** to skip)`
+          `Perfetto! For drinks:\n${intents.menu.drinks.map((d) => `• **${d}**`).join("\n")}\n\nYour choice, or **no** to skip.`
         );
       } else {
-        const cat = detectCategory(text);
-        if (cat) {
-          session.stage = "item_name";
-          session.pending = { category: cat };
-          const list =
-            cat === "pizza" ? intents.menu.pizzas : cat === "pasta" ? intents.menu.pastas : [];
-          reply = setReply(
-            session,
-            `Of course! Pick your **${cat}**:\n${list.map((x) => `• ${x}`).join("\n")}`
-          );
-        } else {
-          reply = setReply(session, failUnderstand(session));
-        }
+        reply = setReply(session, failUnderstand(session));
       }
       break;
     }
@@ -236,14 +366,15 @@ function processMessage(sessionId, userText) {
         session.stage = "desserts";
         reply = setReply(
           session,
-          `No problem. And dessert? **${intents.menu.desserts.join(", ")}** — or say **no** to skip. 🍮`
+          `No drinks — and dessert?\n${intents.menu.desserts.map((d) => `• **${d}**`).join("\n")}\n\nPick one or **no**.`
         );
       } else {
-        session.order.drinks.push(capitalize(userText));
+        const drink = findMenuItem(text);
+        session.order.drinks.push(drink ? drink.name : capitalize(userText));
         session.stage = "desserts";
         reply = setReply(
           session,
-          `**${capitalize(userText)}** added. 🍷\n\nWould you like dessert? **${intents.menu.desserts.join(", ")}** (or **no**)`
+          `Drink added. 🍷\n\nDessert? ${intents.menu.desserts.join(", ")} — or **no**.`
         );
       }
       break;
@@ -254,14 +385,15 @@ function processMessage(sessionId, userText) {
         session.stage = "service";
         reply = setReply(
           session,
-          `All good. Will this be **dine-in**, **takeaway**, or **delivery**? 🏠`
+          `Will this be **dine-in**, **takeaway**, or **delivery**? 🏠`
         );
       } else {
-        session.order.desserts.push(capitalize(userText));
+        const dessert = findMenuItem(text);
+        session.order.desserts.push(dessert ? dessert.name : capitalize(userText));
         session.stage = "service";
         reply = setReply(
           session,
-          `**${capitalize(userText)}** — delicious choice! 🍮\n\nWill you **dine in**, **takeaway**, or **delivery**?`
+          `Dessert added! 🍮\n\n**Dine-in**, **takeaway**, or **delivery**?`
         );
       }
       break;
@@ -271,15 +403,15 @@ function processMessage(sessionId, userText) {
       if (includesKeyword(text, intents.keywords.delivery)) {
         session.order.service = "Delivery";
         session.stage = "name";
-        reply = setReply(session, `Delivery it is. May I have your **name**, per favore?`);
+        reply = setReply(session, `Delivery — may I have your **name**?`);
       } else if (includesKeyword(text, intents.keywords.takeaway)) {
         session.order.service = "Takeaway";
         session.stage = "name";
-        reply = setReply(session, `Takeaway — perfetto! What **name** shall I put on the order?`);
+        reply = setReply(session, `Takeaway — your **name**, please?`);
       } else if (includesKeyword(text, intents.keywords.dineIn)) {
         session.order.service = "Dine-in";
         session.stage = "name";
-        reply = setReply(session, `A table for tonight — wonderful! What **name** for the reservation?`);
+        reply = setReply(session, `Dine-in — **name** for the table?`);
       } else {
         reply = setReply(session, failUnderstand(session));
       }
@@ -291,7 +423,7 @@ function processMessage(sessionId, userText) {
       session.stage = "phone";
       reply = setReply(
         session,
-        `Grazie, **${session.order.name}**! A **phone number** in case we need to reach you? 📱`
+        `Grazie, **${session.order.name}**! Your **phone number**? 📱`
       );
       break;
     }
@@ -300,12 +432,12 @@ function processMessage(sessionId, userText) {
       session.order.phone = userText.trim();
       if (session.order.service === "Delivery") {
         session.stage = "address";
-        reply = setReply(session, `And your **delivery address**, please? 🏠`);
+        reply = setReply(session, `**Delivery address**, please? 🏠`);
       } else {
         session.stage = "confirm";
         reply = setReply(
           session,
-          `Please confirm your order:\n\n${orderSummary(session.order)}\n\nIs everything correct? (**yes** / **no**)`
+          `Please confirm:\n\n${orderSummary(session.order)}\n\n**yes** or **no**?`
         );
       }
       break;
@@ -316,62 +448,50 @@ function processMessage(sessionId, userText) {
       session.stage = "confirm";
       reply = setReply(
         session,
-        `Please confirm your order:\n\n${orderSummary(session.order)}\n\nIs everything correct? (**yes** / **no**)`
+        `Please confirm:\n\n${orderSummary(session.order)}\n\n**yes** or **no**?`
       );
       break;
     }
 
     case "confirm": {
       if (includesKeyword(text, intents.keywords.yes)) {
-        session.stage = "done";
+        const summary = orderSummary(session.order);
+        const name = session.order.name || "friend";
+        resetSession(sessionId);
         reply = setReply(
           session,
-          `**Grazie mille, ${session.order.name}!** 🎉\n\nYour order is confirmed. Luca will send it to the kitchen straight away.\n\n` +
-            `${orderSummary(session.order)}\n\n` +
-            `Estimated time: **25–35 minutes**. Arrivederci and buon appetito! 🍕`
+          `**Grazie mille, ${name}!** 🎉\n\nOrder confirmed:\n\n${summary}\n\n` +
+            `Ready in **25–35 minutes**. Buon appetito!`
         );
-        resetSession(sessionId);
       } else if (includesKeyword(text, intents.keywords.no)) {
         resetSession(sessionId);
-        reply = setReply(
-          session,
-          intents.hardFallback
-        );
+        const s = getSession(sessionId);
+        s.stage = "pick_item";
+        reply = setReply(session, intents.hardFallback);
       } else {
         reply = setReply(session, failUnderstand(session));
       }
       break;
     }
 
-    case "done":
-    default: {
-      resetSession(sessionId);
+    default:
       session.stage = "pick_item";
-      reply = setReply(
-        session,
-        `Buonasera again! Ready for a new order? 🍝\n\n${menuBlock()}`
-      );
-    }
+      reply = setReply(session, introMessage());
   }
 
   pushHistory(session, "bot", reply);
   return reply;
 }
 
-function capitalize(s) {
-  if (!s) return "";
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
 function resetConversation(sessionId) {
   resetSession(sessionId);
-  const reply =
-    `Conversation reset. Buonasera! I am **Luca** at *${intents.restaurant}*. 🍕\n\n` +
-    `Tell me — would you like the **menu**, or shall we start with a pizza or pasta?`;
   const session = getSession(sessionId);
+  session.stage = "pick_item";
+  const reply = setReply(
+    session,
+    `Conversation reset. ${introMessage()}`
+  );
   pushHistory(session, "bot", reply);
-  session.stage = "welcome";
-  session.lastBot = reply;
   return reply;
 }
 

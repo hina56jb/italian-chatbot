@@ -11,8 +11,7 @@ const WELCOME_MESSAGE = {
   id: "welcome",
   sender: "bot",
   text:
-    "Buonasera! 🍕 I am **Luca**, your waiter at *Bella Napoli*.\n\n" +
-    "I will take your order step by step — tell me **hi**, ask for the **menu**, or say what you are craving (pizza, pasta, drinks…).",
+    "Buonasera! 🍕 Tap a button below or say **hi** — **Luca** will guide your order at *Bella Napoli*.",
   timestamp: new Date().toISOString(),
 };
 
