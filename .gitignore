@@ -1,4 +1,9 @@
+node_modules/
+dist/
 .env
-server/.env
-server/node_modules/
-server/package-lock.json
+.env.local
+*.log
+.DS_Store
+Thumbs.db
+learning folder/
+fiverr project/
