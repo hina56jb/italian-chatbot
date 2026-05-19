@@ -2,6 +2,24 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { io } from "socket.io-client";
 import { BACKEND_URL } from "../config/api.js";
 
+/** One socket per page — avoids duplicate sessions (React StrictMode / remounts). */
+function createSocket() {
+  return io(BACKEND_URL, {
+    path: "/socket.io",
+    // WebSocket only on production: Vercel serverless breaks long-polling sessions
+    transports: import.meta.env.PROD ? ["websocket"] : ["websocket", "polling"],
+    upgrade: !import.meta.env.PROD,
+    rememberUpgrade: false,
+    reconnection: true,
+    reconnectionAttempts: 10,
+    reconnectionDelay: 1500,
+    reconnectionDelayMax: 5000,
+    timeout: 25000,
+    autoConnect: true,
+    forceNew: true,
+  });
+}
+
 export function useSocket({ onBotMessage, onBotTyping }) {
   const socketRef = useRef(null);
   const [connectionStatus, setConnectionStatus] = useState("connecting");
@@ -18,22 +36,13 @@ export function useSocket({ onBotMessage, onBotTyping }) {
   }, [onBotTyping]);
 
   useEffect(() => {
-    const socket = io(BACKEND_URL, {
-      path: "/socket.io",
-      transports: ["polling", "websocket"],
-      reconnection: true,
-      reconnectionAttempts: 8,
-      reconnectionDelay: 2000,
-      timeout: 20000,
-      autoConnect: true,
-    });
-
+    const socket = createSocket();
     socketRef.current = socket;
 
-    socket.on("connect", () => setConnectionStatus("connected"));
-    socket.on("disconnect", () => setConnectionStatus("disconnected"));
-    socket.on("connect_error", () => setConnectionStatus("disconnected"));
-    socket.io.on("reconnect_attempt", () => setConnectionStatus("connecting"));
+    const onConnect = () => setConnectionStatus("connected");
+    const onDisconnect = () => setConnectionStatus("disconnected");
+    const onConnectError = () => setConnectionStatus("disconnected");
+    const onReconnectAttempt = () => setConnectionStatus("connecting");
 
     const handleBotPayload = (payload) => {
       const text =
@@ -41,23 +50,30 @@ export function useSocket({ onBotMessage, onBotTyping }) {
           ? payload
           : payload?.message || payload?.text || "";
       const timestamp =
-        payload?.timestamp ||
-        payload?.time ||
-        new Date().toISOString();
+        payload?.timestamp || payload?.time || new Date().toISOString();
 
       if (text && onBotMessageRef.current) {
         onBotMessageRef.current(text, timestamp);
       }
     };
 
+    socket.on("connect", onConnect);
+    socket.on("disconnect", onDisconnect);
+    socket.on("connect_error", onConnectError);
+    socket.io.on("reconnect_attempt", onReconnectAttempt);
     socket.on("bot_message", handleBotPayload);
     socket.on("receive_message", handleBotPayload);
-
     socket.on("bot_typing", (isTyping) => {
       if (onBotTypingRef.current) onBotTypingRef.current(Boolean(isTyping));
     });
 
     return () => {
+      socket.off("connect", onConnect);
+      socket.off("disconnect", onDisconnect);
+      socket.off("connect_error", onConnectError);
+      socket.io.off("reconnect_attempt", onReconnectAttempt);
+      socket.off("bot_message", handleBotPayload);
+      socket.off("receive_message", handleBotPayload);
       socket.disconnect();
       socketRef.current = null;
     };
