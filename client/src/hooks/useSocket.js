@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { io } from "socket.io-client";
-
-const SOCKET_URL =
-  import.meta.env.VITE_SOCKET_URL ||
-  (import.meta.env.DEV ? window.location.origin : window.location.origin);
+import { BACKEND_URL } from "../config/api.js";
 
 export function useSocket({ onBotMessage, onBotTyping }) {
   const socketRef = useRef(null);
@@ -21,12 +18,14 @@ export function useSocket({ onBotMessage, onBotTyping }) {
   }, [onBotTyping]);
 
   useEffect(() => {
-    const socket = io(SOCKET_URL, {
-      transports: ["websocket", "polling"],
+    const socket = io(BACKEND_URL, {
+      path: "/socket.io",
+      transports: ["polling", "websocket"],
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: 8,
       reconnectionDelay: 2000,
-      timeout: 8000,
+      timeout: 20000,
+      autoConnect: true,
     });
 
     socketRef.current = socket;

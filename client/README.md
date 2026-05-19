@@ -13,8 +13,12 @@ npm install
 npm run dev
 ```
 
-4. Start the backend in `../server` on port **3000** (`npm start`).
-5. Open **http://localhost:5173** in the browser.
+4. Open **http://localhost:5173** in the browser.
+
+The app connects to the deployed backend by default:
+**https://italian-chatbot-backend.vercel.app**
+
+To use a local server instead, create `.env` with `VITE_SOCKET_URL=http://localhost:3000`.
 
 ## Production build
 
@@ -28,7 +32,7 @@ Output is in `dist/`. The backend can serve these static files after deployment.
 
 | Variable | Description |
 |----------|-------------|
-| `VITE_SOCKET_URL` | Socket.IO server URL (default: same origin; dev proxy forwards to port 3000) |
+| `VITE_SOCKET_URL` | Socket.IO server URL (default: `https://italian-chatbot-backend.vercel.app`) |
 
 ## React components (separate files)
 
