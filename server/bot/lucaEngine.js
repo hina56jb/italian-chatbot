@@ -130,7 +130,15 @@ function processMessage(sessionId, userText) {
     }
 
     case "pick_item": {
-      if (includesKeyword(text, intents.keywords.menu)) {
+      if (
+        includesKeyword(text, intents.keywords.greeting) &&
+        !detectCategory(text)
+      ) {
+        reply = setReply(
+          session,
+          `Buonasera! Tell me what you would like — **menu**, **pizza**, **pasta**, **drinks**, or **dessert**? 🍷`
+        );
+      } else if (includesKeyword(text, intents.keywords.menu)) {
         reply = setReply(session, menuBlock());
       } else {
         const cat = detectCategory(text);
@@ -156,9 +164,12 @@ function processMessage(sessionId, userText) {
             `Excellent! Choose your **${cat}**:\n${list.map((x) => `• ${x}`).join("\n")}\n\nOr type the name you prefer.`
           );
         } else {
-          session.pending = { category: "dish", raw: userText };
+          session.pending = { name: capitalize(userText) };
           session.stage = "item_qty";
-          reply = setReply(session, `**${capitalize(userText)}** — noted! How many portions would you like? (e.g. 2)`);
+          reply = setReply(
+            session,
+            `**${capitalize(userText)}** — excellent! How many portions would you like? (e.g. 2)`
+          );
         }
       }
       break;
@@ -359,7 +370,7 @@ function resetConversation(sessionId) {
     `Tell me — would you like the **menu**, or shall we start with a pizza or pasta?`;
   const session = getSession(sessionId);
   pushHistory(session, "bot", reply);
-  session.stage = "pick_item";
+  session.stage = "welcome";
   session.lastBot = reply;
   return reply;
 }
