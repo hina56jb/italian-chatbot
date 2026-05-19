@@ -59,7 +59,7 @@ export default function App() {
   });
 
   const sendMessage = useCallback(
-    (text) => {
+    async (text) => {
       const trimmed = text.trim();
       if (!trimmed || inputDisabled) return;
 
@@ -68,7 +68,7 @@ export default function App() {
       setIsTyping(true);
       clearUnlockTimer();
 
-      const sent = sendUserMessage(trimmed);
+      const sent = await sendUserMessage(trimmed);
 
       if (!sent) {
         setIsTyping(false);
