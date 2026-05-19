@@ -1,10 +1,14 @@
 import { BACKEND_URL } from "../config/api.js";
+import { getSessionId } from "./sessionId.js";
 
 export async function sendChatMessage(message) {
   const response = await fetch(`${BACKEND_URL}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
+    headers: {
+      "Content-Type": "application/json",
+      "X-Session-Id": getSessionId(),
+    },
+    body: JSON.stringify({ message, sessionId: getSessionId() }),
   });
 
   if (!response.ok) {
@@ -17,7 +21,11 @@ export async function sendChatMessage(message) {
 export async function resetChatSession() {
   const response = await fetch(`${BACKEND_URL}/api/reset`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Session-Id": getSessionId(),
+    },
+    body: JSON.stringify({ sessionId: getSessionId() }),
   });
 
   if (!response.ok) {

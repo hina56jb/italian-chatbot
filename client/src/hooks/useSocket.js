@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { io } from "socket.io-client";
 import { BACKEND_URL } from "../config/api.js";
 import { sendChatMessage, resetChatSession } from "../utils/chatApi.js";
+import { getSessionId, resetSessionId } from "../utils/sessionId.js";
 
 const SOCKET_OPTS = {
   path: "/socket.io",
@@ -19,6 +20,7 @@ const SOCKET_OPTS = {
 let sharedSocket = null;
 
 function getSharedSocket() {
+  const sessionId = getSessionId();
   if (sharedSocket && !sharedSocket.disconnected) {
     return sharedSocket;
   }
@@ -26,7 +28,10 @@ function getSharedSocket() {
     sharedSocket.removeAllListeners();
     sharedSocket.disconnect();
   }
-  sharedSocket = io(BACKEND_URL, SOCKET_OPTS);
+  sharedSocket = io(BACKEND_URL, {
+    ...SOCKET_OPTS,
+    query: { sessionId },
+  });
   return sharedSocket;
 }
 
@@ -44,6 +49,7 @@ export function useSocket({ onBotMessage, onBotTyping }) {
   const socketRef = useRef(null);
   const [connectionStatus, setConnectionStatus] = useState("connecting");
   const useHttpFallbackRef = useRef(false);
+  const sendingRef = useRef(false);
 
   const onBotMessageRef = useRef(onBotMessage);
   const onBotTypingRef = useRef(onBotTyping);
@@ -87,13 +93,9 @@ export function useSocket({ onBotMessage, onBotTyping }) {
     socket.on("connect_error", onConnectError);
     socket.io.on("reconnect_attempt", onReconnectAttempt);
     socket.on("bot_message", handleBotPayload);
-    socket.on("receive_message", handleBotPayload);
-    socket.on("bot_typing", (isTyping) => {
-      if (onBotTypingRef.current) onBotTypingRef.current(Boolean(isTyping));
-    });
 
     if (socket.connected) onConnect();
-    else if (socket.disconnected) socket.connect();
+    else socket.connect();
 
     return () => {
       socket.off("connect", onConnect);
@@ -101,20 +103,22 @@ export function useSocket({ onBotMessage, onBotTyping }) {
       socket.off("connect_error", onConnectError);
       socket.io.off("reconnect_attempt", onReconnectAttempt);
       socket.off("bot_message", handleBotPayload);
-      socket.off("receive_message", handleBotPayload);
     };
   }, []);
 
   const sendUserMessage = useCallback(async (text) => {
-    const socket = socketRef.current;
-
-    if (socket?.connected && !useHttpFallbackRef.current) {
-      socket.emit("user_message", { message: text });
-      socket.emit("send_message", { message: text });
-      return true;
-    }
+    if (sendingRef.current) return false;
+    sendingRef.current = true;
 
     try {
+      const socket = socketRef.current;
+
+      if (socket?.connected && !useHttpFallbackRef.current) {
+        if (onBotTypingRef.current) onBotTypingRef.current(true);
+        socket.emit("user_message", { message: text });
+        return true;
+      }
+
       useHttpFallbackRef.current = true;
       setConnectionStatus("connected");
       if (onBotTypingRef.current) onBotTypingRef.current(true);
@@ -130,15 +134,20 @@ export function useSocket({ onBotMessage, onBotTyping }) {
     } catch {
       if (onBotTypingRef.current) onBotTypingRef.current(false);
       return false;
+    } finally {
+      sendingRef.current = false;
     }
   }, []);
 
   const resetOnServer = useCallback(async () => {
+    resetSessionId();
     const socket = socketRef.current;
+
     if (socket?.connected && !useHttpFallbackRef.current) {
       socket.emit("reset_conversation", {});
       return;
     }
+
     try {
       const data = await resetChatSession();
       const { text, timestamp } = parseBotPayload(data);

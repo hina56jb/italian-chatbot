@@ -2,6 +2,7 @@
 export const BACKEND_PRODUCTION = "https://italian-chatbot-backend.vercel.app";
 
 function resolveBackendUrl() {
+  // Production build: never use window.location / mis-set Vercel env
   if (import.meta.env.PROD) {
     return BACKEND_PRODUCTION;
   }

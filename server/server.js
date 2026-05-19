@@ -2,6 +2,7 @@ const express = require("express");
 const http = require("http");
 const cors = require("cors");
 const { Server } = require("socket.io");
+const { processMessage, resetConversation } = require("./bot/lucaEngine");
 
 const app = express();
 app.use(cors({ origin: "*" }));
@@ -22,12 +23,17 @@ function buildBotPayload(text) {
   };
 }
 
-function botReplyText(userText) {
-  return "🍕 Luca received your order!";
+function resolveSessionId(req, fallback) {
+  return (
+    req.body?.sessionId ||
+    req.headers["x-session-id"] ||
+    req.query?.sessionId ||
+    fallback
+  );
 }
 
 app.get("/", (_req, res) => {
-  res.json({ status: "ok", service: "Bella Napoli API" });
+  res.json({ status: "ok", service: "Bella Napoli — Luca Bot API" });
 });
 
 app.get("/health", (_req, res) => {
@@ -35,17 +41,16 @@ app.get("/health", (_req, res) => {
 });
 
 app.post("/api/chat", (req, res) => {
+  const sessionId = resolveSessionId(req, "http-guest");
   const text = req.body?.message || req.body?.text || "";
-  console.log("HTTP chat:", text);
-  res.json(buildBotPayload(botReplyText(text)));
+  const reply = processMessage(sessionId, text);
+  res.json(buildBotPayload(reply));
 });
 
-app.post("/api/reset", (_req, res) => {
-  res.json(
-    buildBotPayload(
-      "Conversation reset! Buonasera — what would you like to order? 🍝"
-    )
-  );
+app.post("/api/reset", (req, res) => {
+  const sessionId = resolveSessionId(req, "http-guest");
+  const reply = resetConversation(sessionId);
+  res.json(buildBotPayload(reply));
 });
 
 const server = http.createServer(app);
@@ -63,29 +68,24 @@ function attachSocketIO(httpServer) {
   });
 
   function replyToUser(socket, text) {
-    const payload = buildBotPayload(text);
-    socket.emit("bot_message", payload);
-    socket.emit("receive_message", payload);
-  }
-
-  function handleUserMessage(socket, data) {
-    const text =
-      typeof data === "string" ? data : data?.message || data?.text || "";
-    console.log("Socket message:", text);
-    replyToUser(socket, botReplyText(text));
+    socket.emit("bot_message", buildBotPayload(text));
   }
 
   io.on("connection", (socket) => {
-    console.log("User connected:", socket.id);
+    const sessionId =
+      socket.handshake.query?.sessionId || socket.id;
+    console.log("User connected:", socket.id, "session:", sessionId);
 
-    socket.on("send_message", (data) => handleUserMessage(socket, data));
-    socket.on("user_message", (data) => handleUserMessage(socket, data));
+    socket.on("user_message", (data) => {
+      const text =
+        typeof data === "string" ? data : data?.message || data?.text || "";
+      const reply = processMessage(sessionId, text);
+      replyToUser(socket, reply);
+    });
 
     socket.on("reset_conversation", () => {
-      replyToUser(
-        socket,
-        "Conversation reset! Buonasera — what would you like to order? 🍝"
-      );
+      const reply = resetConversation(sessionId);
+      replyToUser(socket, reply);
     });
   });
 

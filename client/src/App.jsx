@@ -10,7 +10,9 @@ import { downloadConversationJson } from "./utils/exportConversation.js";
 const WELCOME_MESSAGE = {
   id: "welcome",
   sender: "bot",
-  text: "Buonasera! 🍕 I am **Luca**, your waiter at Bella Napoli. What can I bring you tonight?",
+  text:
+    "Buonasera! 🍕 I am **Luca**, your waiter at *Bella Napoli*.\n\n" +
+    "I will take your order step by step — tell me **hi**, ask for the **menu**, or say what you are craving (pizza, pasta, drinks…).",
   timestamp: new Date().toISOString(),
 };
 
@@ -94,13 +96,19 @@ export default function App() {
     setShowExportModal(true);
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     if (!window.confirm("Reset conversation and start over? 🍕")) return;
     clearUnlockTimer();
-    setMessages([{ ...WELCOME_MESSAGE, id: createMessageId(), timestamp: new Date().toISOString() }]);
+    setMessages([
+      {
+        ...WELCOME_MESSAGE,
+        id: createMessageId(),
+        timestamp: new Date().toISOString(),
+      },
+    ]);
     setIsTyping(false);
     setInputDisabled(false);
-    resetOnServer();
+    await resetOnServer();
   };
 
   return (

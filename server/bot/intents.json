@@ -1,0 +1,30 @@
+{
+  "restaurant": "Bella Napoli",
+  "waiter": "Luca",
+  "softFallbacks": [
+    "Scusa, I didn't quite catch that. Could you say it another way? 🍝",
+    "Mmm, I'm not sure I understood. Would you mind rephrasing, per favore?",
+    "Forgive me — could you repeat that for Luca?"
+  ],
+  "hardFallback": "Let us start fresh — a new beginning is always delicious! 🍕 Tell me, what would you like to order tonight?",
+  "keywords": {
+    "greeting": ["hi", "hello", "hey", "ciao", "buongiorno", "buonasera", "good evening", "good morning"],
+    "menu": ["menu", "show menu", "what do you have", "options", "dishes"],
+    "pizza": ["pizza", "margherita", "pepperoni", "quattro formaggi", "diavola", "funghi"],
+    "pasta": ["pasta", "spaghetti", "penne", "carbonara", "bolognese", "arrabiata", "lasagna"],
+    "drinks": ["drink", "drinks", "wine", "water", "cola", "beer", "prosecco", "limoncello"],
+    "dessert": ["dessert", "desserts", "tiramisu", "gelato", "panna cotta", "sweet"],
+    "bill": ["bill", "check", "pay", "payment", "total"],
+    "yes": ["yes", "yeah", "yep", "sure", "ok", "okay", "si", "sì", "please", "correct", "confirm"],
+    "no": ["no", "nope", "nah", "nothing", "skip", "none", "no thanks"],
+    "dineIn": ["dine in", "dine-in", "eat here", "table", "restaurant"],
+    "takeaway": ["takeaway", "take away", "pickup", "pick up", "to go"],
+    "delivery": ["delivery", "deliver", "home", "address"]
+  },
+  "menu": {
+    "pizzas": ["Margherita", "Pepperoni", "Quattro Formaggi", "Diavola", "Funghi"],
+    "pastas": ["Spaghetti Carbonara", "Penne Arrabiata", "Lasagna", "Spaghetti Bolognese"],
+    "drinks": ["House Red Wine", "Sparkling Water", "Italian Cola", "Prosecco"],
+    "desserts": ["Tiramisu", "Vanilla Gelato", "Panna Cotta"]
+  }
+}
